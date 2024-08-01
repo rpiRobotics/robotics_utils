@@ -4,6 +4,10 @@ import matplotlib.pyplot as plt
 from scipy.interpolate import interp1d
 import scipy, math
 
+ex=np.array([[1.],[0.],[0.]])
+ey=np.array([[0.],[1.],[0.]])
+ez=np.array([[0.],[0.],[1.]])
+
 def Rx(theta):
 	return np.array([[1,0,0],[0,np.cos(theta),-np.sin(theta)],[0,np.sin(theta),np.cos(theta)]])
 def Ry(theta):
@@ -108,7 +112,7 @@ def pose_regression(A,B):
 	return H_from_RT(R,t)
 
 
-def find_norm(p1,p2,p3):
+def point2line_vec(p1,p2,p3):
 	#find normal vector from p1 pointing to line of p2p3
 	p2p1=p2-p1
 	p3p1=p3-p1
@@ -116,12 +120,6 @@ def find_norm(p1,p2,p3):
 	vec=np.cross(np.cross(p2p1,p3p1),p2p3)
 	return vec/np.linalg.norm(vec)
 
-def get_speed(curve_exe,timestamp):
-	d_curve_exe=np.gradient(curve_exe,axis=0)
-	speed=np.linalg.norm(d_curve_exe,axis=1)/np.gradient(timestamp)
-	speed=moving_average(speed,padding=True)
-
-	return speed
 
 def clip_joints(robot,curve_js,relax=0.05):
 	curve_js_clipped=np.zeros(curve_js.shape)
@@ -184,7 +182,8 @@ def quadrant(q,robot):
 	return np.hstack((cf146,[4*REAR+2*LOWERARM+FLIP])).astype(int)
 
 
-def direction2R(v_norm,v_tang):
+def direction2R_x(v_norm,v_tang):
+	###form rotation matrix from a normal and a tangent vector
 	v_norm=v_norm/np.linalg.norm(v_norm)
 	v_tang=VectorPlaneProjection(v_tang,v_norm)
 	y=np.cross(v_norm,v_tang)
@@ -193,6 +192,7 @@ def direction2R(v_norm,v_tang):
 	return R
 
 def direction2R_y(v_norm,v_tang):
+	###form rotation matrix from a normal and a tangent vector
 	v_norm=v_norm/np.linalg.norm(v_norm)
 	v_tang=VectorPlaneProjection(v_tang,v_norm)
 	x=np.cross(v_tang,v_norm)
@@ -271,16 +271,6 @@ def lineFromPoints(P, Q):
 	c = -(a*(P[0]) + b*(P[1]))
 	return a,b,c
 
-def extract_points(primitive_type,points):
-	if primitive_type=='movec_fit':
-		endpoints=points[8:-3].split('array')
-		endpoint1=endpoints[0][:-4].split(',')
-		endpoint2=endpoints[1][2:].split(',')
-
-		return np.array(list(map(float, endpoint1))),np.array(list(map(float, endpoint2)))
-	else:
-		endpoint=points[8:-3].split(',')
-		return np.array(list(map(float, endpoint)))
 
 
 def visualize_curve_w_normal(curve,curve_normal,stepsize=500,equal_axis=False):
@@ -293,10 +283,7 @@ def visualize_curve_w_normal(curve,curve_normal,stepsize=500,equal_axis=False):
 	ax.set_xlabel('x (mm)')
 	ax.set_ylabel('y (mm)')
 	ax.set_zlabel('z (mm)')
-	if equal_axis:
-		ax.set_xlim([0,3000])
-		ax.set_ylim([0,3000])
-		ax.set_zlim([0,3000])
+	set_axes_equal(ax)
 
 	plt.show()
 
@@ -305,6 +292,7 @@ def visualize_curve(curve,stepsize=10):
 	plt.figure()
 	ax = plt.axes(projection='3d')
 	ax.plot3D(curve[:,0], curve[:,1],curve[:,2], 'gray')
+	set_axes_equal(ax)
 
 	plt.show()
 
@@ -363,26 +351,9 @@ def H_from_RT(R,T):
 	return np.hstack((np.vstack((R,np.zeros(3))),np.append(T,1).reshape(4,1)))
 
 
-def car2js(robot,q_init,curve_fit,curve_fit_R):
-	###calculate corresponding joint configs
-	curve_fit_js=[]
-	if curve_fit.shape==(3,):### if a single point
-		temp_q=robot.inv(curve_fit,curve_fit_R,last_joints=q_init)[0]
-		curve_fit_js.append(temp_q)
-
-	else:
-		for i in range(len(curve_fit)):
-			###choose inv_kin closest to previous joints
-			if len(curve_fit_js)>1:
-				temp_q=robot.inv(curve_fit[i],curve_fit_R[i],last_joints=curve_fit_js[-1])[0]
-			else:
-				temp_q=robot.inv(curve_fit[i],curve_fit_R[i],last_joints=q_init)[0]
-			
-			curve_fit_js.append(temp_q)
-
-	return curve_fit_js
 
 def R2w(curve_R,R_constraint=[]):
+	###convert rotation matrix to axis-angle, starting initial rotation matrix as 0
 	if len(R_constraint)==0:
 		R_init=curve_R[0]
 		curve_w=[np.zeros(3)]
@@ -399,7 +370,9 @@ def R2w(curve_R,R_constraint=[]):
 		k=np.array(k)
 		curve_w.append(k*theta)
 	return np.array(curve_w)
+
 def w2R(curve_w,R_init):
+	###convert axis-angle to rotation matrix, starting initial rotation matrix as 0
 	curve_R=[]
 	for i in range(len(curve_w)):
 		theta=np.linalg.norm(curve_w[i])
@@ -441,34 +414,6 @@ def rotationMatrixToEulerAngles(R) :
 		z = 0
 	return [x, y, z]
 
-
-def plot_speed_error(lam,speed,error,angle_error,cmd_v,peaks=[],path='',error_window=2):
-	fig, ax1 = plt.subplots()
-	ax2 = ax1.twinx()
-	ax1.plot(lam, speed, 'g-', label='Speed')
-	if len(error)>0:
-		ax2.plot(lam, error, 'b-',label='Error')
-	if len(peaks)>0:
-		ax2.scatter(lam[peaks],error[peaks],label='peaks')
-	if len(angle_error)>0:
-		ax2.plot(lam, np.degrees(angle_error), 'y-',label='Normal Error')
-	ax2.axis(ymin=0,ymax=error_window)
-	ax1.axis(ymin=0,ymax=1.2*cmd_v)
-
-	ax1.set_xlabel('lambda (mm)')
-	ax1.set_ylabel('Speed/lamdot (mm/s)', color='g')
-	ax2.set_ylabel('Error/Normal Error (mm/deg)', color='b')
-	plt.title("Speed and Error Plot")
-	ax1.legend(loc="upper right")
-
-	ax2.legend(loc="upper left")
-
-	plt.legend()
-	if len(peaks)>0:
-		plt.savefig(path)
-		plt.clf()
-	else:
-		plt.show()
 
 def unwrapped_angle_check(q_init,q_all):
 

@@ -8,7 +8,8 @@ version = "0.1.0"
 description = "HHL's Robotics Utility Functions."
 
 packages = [
-    { include = "robotics_utils", from = "src" }
+    { include = "robotics_utils", from = "src" },
+    { include = "std_robot_def", from = "src" }
 ]
 
 authors = ["Honglu He <heh6@rpi.edu>",]
