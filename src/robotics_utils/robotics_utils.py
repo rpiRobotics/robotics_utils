@@ -271,7 +271,17 @@ def lineFromPoints(P, Q):
 	c = -(a*(P[0]) + b*(P[1]))
 	return a,b,c
 
+def line_intersection(p1, v1, p2, v2):
+    n = np.cross(v1, v2)        #closest points on both line will lie on the perpendicular vector of both lines
+    n1 = np.cross(v1, n)        #define normal vector of plane formed by v1 and n
+    n2 = np.cross(v2, n)        #define normal vector of plane formed by v2 and n
 
+    #see my write up
+    c1 = p1 + np.dot(p2 - p1, n2) / np.dot(v1, n2) * v1
+    c2 = p2 + np.dot(p1 - p2, n1) / np.dot(v2, n1) * v2
+
+    # Return the midpoint on both lines as the intersection point
+    return (c1 + c2) / 2
 
 def visualize_curve_w_normal(curve,curve_normal,stepsize=500,equal_axis=False):
 	curve=curve[::stepsize]
