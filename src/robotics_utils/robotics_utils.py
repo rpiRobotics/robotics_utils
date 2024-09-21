@@ -453,4 +453,34 @@ def set_axes_equal(ax: plt.Axes):
     ax.set_ylim3d([y - radius, y + radius])
     ax.set_zlim3d([z - radius, z + radius])
 	
-    
+
+def rigid_transform_3D(A, B):
+    assert len(A) == len(B), "Point sets A and B must have the same number of points"
+    assert A.shape[1] == B.shape[1], "Point sets A and B must have the same dimensionality"
+
+    # Step 1: Compute centroids
+    centroid_A = np.mean(A, axis=0)
+    centroid_B = np.mean(B, axis=0)
+
+    # Step 2: Center the points
+    AA = A - centroid_A
+    BB = B - centroid_B
+
+    # Step 3: Compute covariance matrix H
+    H = AA.T @ BB
+
+    # Step 4: Perform SVD
+    U, S, Vt = np.linalg.svd(H)
+
+    # Step 5: Compute rotation matrix R
+    R = Vt.T @ U.T
+
+    # Step 6: Correct reflection if necessary
+    if np.linalg.det(R) < 0:
+        Vt[-1, :] *= -1
+        R = Vt.T @ U.T
+
+    # Step 7: Compute translation vector t
+    t = centroid_B - R @ centroid_A
+
+    return R, t
